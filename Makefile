@@ -16,4 +16,3 @@ clean:
 .PHONY: prebuild
 prebuild: 
 	go get ./...
-

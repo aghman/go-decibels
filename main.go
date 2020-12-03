@@ -2,77 +2,37 @@
 package main
 
 import (
-	"fmt"
 	"os"
 
-	"github.com/gen2brain/malgo"
+	"github.com/gordonklaus/portaudio"
 )
 
 func main() {
-	ctx, err := malgo.InitContext(nil, malgo.ContextConfig{}, func(message string) {
-		fmt.Printf("LOG <%v>\n", message)
-	})
-	if err != nil {
-		fmt.Println(err)
-		os.Exit(1)
-	}
-	defer func() {
-		_ = ctx.Uninit()
-		ctx.Free()
-	}()
+	nSamples := 0
+	sig := make(chan os.Signal, 1)
+	portaudio.Initialize()
+	defer portaudio.Terminate()
+	in := make([]int32, 64)
+	stream, err := portaudio.OpenDefaultStream(1, 0, 44100, len(in), in)
+	chk(err)
+	defer stream.Close()
 
-	deviceConfig := malgo.DefaultDeviceConfig(malgo.Duplex)
-	deviceConfig.Capture.Format = malgo.FormatS16
-	deviceConfig.Capture.Channels = 1
-	deviceConfig.Playback.Format = malgo.FormatS16
-	deviceConfig.Playback.Channels = 1
-	deviceConfig.SampleRate = 44100
-	deviceConfig.Alsa.NoMMap = 1
-
-	//var playbackSampleCount uint32
-	var capturedSampleCount uint32
-	//pCapturedSamples := make([]byte, 0)
-
-	sizeInBytes := uint32(malgo.SampleSizeInBytes(deviceConfig.Capture.Format))
-	onRecvFrames := func(pSample2, pSample []byte, framecount uint32) {
-
-		sampleCount := framecount * deviceConfig.Capture.Channels * sizeInBytes
-
-		newCapturedSampleCount := capturedSampleCount + sampleCount
-		var totalSampleSum uint16 = 0
-		for iSample := 0; iSample < len(pSample); iSample += 2 {
-			currentSample := uint16(pSample[iSample+1]) | uint16(pSample[iSample])<<8
-			totalSampleSum += currentSample
+	chk(stream.Start())
+	for {
+		chk(stream.Read())
+		//chk(binary.Write(f, binary.BigEndian, in))
+		nSamples += len(in)
+		select {
+		case <-sig:
+			return
+		default:
 		}
-		var avgSampleValue uint16 = totalSampleSum / uint16(sampleCount)
-		fmt.Printf("Avg Sample Value: %d\n", avgSampleValue)
-
-		//pCapturedSamples = append(pCapturedSamples, pSample...)
-
-		capturedSampleCount = newCapturedSampleCount
-		//fmt.Printf("%d captured samples, %d bytes per sample\n", sampleCount, sizeInBytes)
-
 	}
+	chk(stream.Stop())
+}
 
-	fmt.Println("Recording...")
-	captureCallbacks := malgo.DeviceCallbacks{
-		Data: onRecvFrames,
-	}
-	device, err := malgo.InitDevice(ctx.Context, deviceConfig, captureCallbacks)
+func chk(err error) {
 	if err != nil {
-		fmt.Println(err)
-		os.Exit(1)
+		panic(err)
 	}
-
-	err = device.Start()
-	if err != nil {
-		fmt.Println(err)
-		os.Exit(1)
-	}
-
-	fmt.Println("Press Enter to stop recording...")
-	fmt.Scanln()
-
-	device.Uninit()
-
 }
